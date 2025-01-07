@@ -3,9 +3,11 @@ import torch
 import typer
 from data import corrupt_mnist
 from model import S1model
+import numpy as np
 
 # The model and data are moved to GPU or Apple MPS accelerator if available
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+
 
 # This allows the inline commands to refer to the corresponding function
 app = typer.Typer()
