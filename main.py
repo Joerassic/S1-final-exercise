@@ -1,0 +1,106 @@
+import matplotlib.pyplot as plt
+import torch
+import typer
+from data import corrupt_mnist
+from model import S1model
+
+# The model and data are moved to GPU or Apple MPS accelerator if available
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+
+# This allows the inline commands to refer to the corresponding function
+app = typer.Typer()
+
+# If the command is train:
+@app.command()
+def train(lr: float = 1e-4, batch_size: int = 32, epochs: int = 10)->None:
+
+    """Train a model on MNIST.""" 
+    
+    # printing hyperparameters
+    print(f"{lr=}, {batch_size=}, {epochs=}")
+
+    # Loading the model
+    model = S1model().to(DEVICE)
+
+    # Splitting the training data into batches
+    train_set, _ = corrupt_mnist()
+    train_dataloader = torch.utils.data.DataLoader(train_set, batch_size=batch_size)
+
+    # Using cross entropy as loss function
+    loss_fn = torch.nn.CrossEntropyLoss()
+
+    # Using SGD as optimizer
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+
+    # Calculating loss and accuracy
+    statistics = {"train_loss": [], "train_accuracy": []}
+    for epoch in range(epochs):
+        model.train()
+        for i, (img, target) in enumerate(train_dataloader):
+
+            img, target = img.to(DEVICE), target.to(DEVICE)
+
+            optimizer.zero_grad()
+            y_pred = model(img)
+            loss = loss_fn(y_pred, target)
+            loss.backward()
+            optimizer.step()
+
+            statistics["train_loss"].append(loss.item())
+
+            accuracy = (y_pred.argmax(dim=1) == target).float().mean().item()
+
+            statistics["train_accuracy"].append(accuracy)
+
+            # printing the loss every 100th iteration
+            if i % 100 == 0:
+                print(f"Epoch {epoch}, iter {i}, loss: {loss.item()}")
+
+    print("Training complete")
+
+    # Saving the model!
+    torch.save(model.state_dict(), "model.pth")
+
+    # Plotting the loss and accuracy
+    fig, axs = plt.subplots(1, 2, figsize=(15, 5))
+    axs[0].plot(statistics["train_loss"])
+    axs[0].set_title("Train loss")
+    axs[1].plot(statistics["train_accuracy"])
+    axs[1].set_title("Train accuracy")
+    fig.savefig("training_statistics.png")
+
+
+# If the command is evaluare
+@app.command()
+def evaluate(model_checkpoint: str)->None:
+
+    """Evaluate a trained model."""
+
+    # Printing the latest checkpoint from the training of the model
+    print(model_checkpoint)
+
+    # Loading the model
+    model = S1model().to(DEVICE)
+    model.load_state_dict(torch.load(model_checkpoint,weights_only=True))
+
+    # Splitting the test data into batches
+    _, test_set = corrupt_mnist()
+    test_dataloader = torch.utils.data.DataLoader(test_set, batch_size=32)
+
+    # Turning dropout off
+    model.eval()
+
+    # initializing counts
+    correct, total = 0, 0
+
+    # Predicting and saving the number of correct predictions
+    for img, target in test_dataloader:
+        img, target = img.to(DEVICE), target.to(DEVICE)
+        y_pred = model(img)
+        correct += (y_pred.argmax(dim=1) == target).float().sum().item()
+        total += target.size(0)
+    print(f"Test accuracy: {correct / total}")
+
+
+if __name__ == "__main__":
+    app()
